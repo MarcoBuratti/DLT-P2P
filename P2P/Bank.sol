@@ -1,4 +1,4 @@
-pragma solidity ^0.4.17;
+pragma solidity ^0.5.0;
 
 contract P2PLending {
     // Global Variables
@@ -54,7 +54,7 @@ contract P2PLending {
     function createInvestor() public {
         // cerca che il nuovo investitore non sia un debitore 
         require (borrowers[msg.sender].EXISTS != true, 'You are already a Borrower, you can\'t be an Investor');
-        Investor storage investor = investor;
+        Investor memory investor;
         investor.investor_public_key = msg.sender;
         investor.EXISTS = true;
         //inserisce il nuovo investirore nella mappa(lista) degli investirori
@@ -67,7 +67,7 @@ contract P2PLending {
     
     function createBorrower() public {
         require (investors[msg.sender].EXISTS != true, 'You are already an Investor, you can\'t be a Borrower');
-        Borrower storage borrower = borrower;
+        Borrower memory borrower;
         borrower.borrower_public_key = msg.sender;
         borrower.EXISTS = true;
         borrowers[msg.sender] = borrower;
@@ -76,12 +76,11 @@ contract P2PLending {
         balances[msg.sender] = 0; // Init balance
     }
     
-    function createApplication(uint credit_amount, string description) public {
+    function createApplication(uint credit_amount, string memory description) public {
         //richiedente non deve avere debiti ne richieste di debito attive
-        require(hasOngoingLoan[msg.sender] == false);
-        require(hasOngoingApplication[msg.sender] == false);
-        require(isBorrower(msg.sender));
-        
+        require(hasOngoingLoan[msg.sender] == false, 'You have an ongoing Loan');
+        require(hasOngoingApplication[msg.sender] == false, 'You have an ongoing Application');
+        require(isBorrower(msg.sender), 'You aren\'t subscribe as a borrower');
         applications[msg.sender] = LoanApplication(true, msg.sender, credit_amount, 5, description);
 
         hasOngoingApplication[msg.sender] = true;
@@ -94,36 +93,37 @@ contract P2PLending {
     }
     
     //richiesta per il prelievo 
-    function withdraw() payable public {
-        require(msg.value <= balances[msg.sender], 'Not enough funds');
-        balances[msg.sender] -= msg.value;
-        msg.sender.transfer(msg.value);
+    function withdraw(int amount) public {
+        uint withdrawAmount = uint(amount);
+        require(withdrawAmount * 1000000000000000000 <= balances[msg.sender], 'Not enough funds');
+        balances[msg.sender] -= withdrawAmount * 1000000000000000000;
+        msg.sender.transfer(withdrawAmount);
     }
     
-    function withdrawAll() payable public {
+    function withdrawAll() public {
         require(balances[msg.sender] > 0, 'Nothing to withdraw');
         msg.sender.transfer(balances[msg.sender]);
         balances[msg.sender] = 0;
     }
     
     //finanzia un progetto/debitore
-    function transfer(address reciever) private {
-        require(borrowers[reciever].EXISTS == true, 'This address do not exists!');
-        require(balances[msg.sender] >= msg.value);
-        balances[msg.sender] -= msg.value;
-        balances[reciever] += msg.value;
+    function transfer(address reciever, uint amount) private {
+        require(borrowers[reciever].EXISTS == true || investors[reciever].EXISTS == true, 'This address do not exists!');
+        require(balances[msg.sender] >= amount * 1000000000000000000);
+        balances[msg.sender] -= amount * 1000000000000000000;
+        balances[reciever] += amount * 1000000000000000000;
     }
     
-    function grantLoan(address ApplicationsID) payable public {
+    function grantLoan(address ApplicationsID, uint amount) payable public {
         //Check sufficient balance
         require(isInvestor(msg.sender), 'You are not an Investor');
         require(balances[msg.sender] >= applications[ApplicationsID].credit_amount, 'Not enough money on your BankAccount');
         require(hasOngoingInvestment[msg.sender] == false, 'You already have an ongoing Investment');
         require(applications[ApplicationsID].openApplications == true, 'This application does not exist');
-        //require(msg.value == applications[ApplicationsID].credit_amount, 'You have the same amount of the Application');
+        require(amount == applications[ApplicationsID].credit_amount, 'Give the same amount requested from Apllications');
 
         // Take from sender and give to reciever
-        transfer(ApplicationsID);
+        transfer(ApplicationsID, amount);
         
         // Populate loan object
         loans[ApplicationsID] = Loan(true, ApplicationsID, msg.sender, 5, applications[ApplicationsID].credit_amount);
@@ -135,7 +135,7 @@ contract P2PLending {
         hasOngoingInvestment[msg.sender] = true;
     }
   
-    function repayLoan() payable public {
+    function repayLoan(uint amount) payable public {
         require(isBorrower(msg.sender), 'You are not an Borrower');
         require(balances[msg.sender] >= msg.value, 'Not enough money on your BankAccount');
         require(hasOngoingLoan[msg.sender] == true, 'You do not have an ongoing Loan');
@@ -143,17 +143,19 @@ contract P2PLending {
         
         address reciever = loans[msg.sender].investor;
         loans[msg.sender].original_amount -= msg.value;
-        transfer(reciever);
+        transfer(reciever, amount);
+        hasOngoingInvestment[reciever] = false;
+        hasOngoingLoan[msg.sender] = false;
         emit PayBack(msg.sender, reciever, msg.value, loans[msg.sender].original_amount);
     }
     
     function viewBalance() public view returns (uint) {
         return balances[msg.sender];
     }    
-    function getListApplication() public view returns (address []) {
+    function getListApplication() public view returns (address [] memory) {
         return tableProject;
     }
-    function getApplicationData(address index) public view returns (address, uint, uint, string, bool) {
+    function getApplicationData(address index) public view returns (address, uint, uint, string memory, bool) {
         
         address borrower = applications[index].borrower;
         uint amount = applications[index].credit_amount;
