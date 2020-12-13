@@ -93,12 +93,12 @@ contract P2PLending {
     }
     
     //richiesta per il prelievo 
-    function withdraw(int amount) public {
+    /*function withdraw(int amount) public {
         uint withdrawAmount = uint(amount);
         require(withdrawAmount * 1000000000000000000 <= balances[msg.sender], 'Not enough funds');
         balances[msg.sender] -= withdrawAmount * 1000000000000000000;
         msg.sender.transfer(withdrawAmount);
-    }
+    }*/
     
     function withdrawAll() public {
         require(balances[msg.sender] > 0, 'Nothing to withdraw');
@@ -107,27 +107,26 @@ contract P2PLending {
     }
     
     //finanzia un progetto/debitore
-    function transfer(address reciever, int amount) private {
+    function transfer(address reciever, uint amount) private {
         require(borrowers[reciever].EXISTS == true || investors[reciever].EXISTS == true, 'This address do not exists!');
-        require(balances[msg.sender] >= uint(amount * 1000000000000000000) );
-        balances[msg.sender] -= uint(amount * 1000000000000000000);
-        balances[reciever] += uint(amount * 1000000000000000000);
+        require(balances[msg.sender] >= amount * 1000000000000000000 );
+        balances[msg.sender] -= amount * 1000000000000000000;
+        balances[reciever] += amount * 1000000000000000000;
     }
     
-    function grantLoan(address ApplicationsID, int amount) payable public {
+    function grantLoan(address ApplicationsID, uint amount) payable public {
         //Check sufficient balance
         require(isInvestor(msg.sender), 'You are not an Investor');
         require(balances[msg.sender] >= applications[ApplicationsID].credit_amount, 'Not enough money on your BankAccount');
         require(hasOngoingInvestment[msg.sender] == false, 'You already have an ongoing Investment');
         require(applications[ApplicationsID].openApplications == true, 'This application does not exist');
-        require(uint(amount) == applications[ApplicationsID].credit_amount, 'Give the same amount requested from Apllications');
+        require(amount == applications[ApplicationsID].credit_amount, 'Give the same amount requested from Apllications');
 
         // Take from sender and give to reciever
         transfer(ApplicationsID, amount);
         
         // Populate loan object
         uint newAmount = applications[ApplicationsID].credit_amount * 1000000000000000000;
-        //newAmount += (applications[ApplicationsID].credit_amount * 50000000000000000);
         loans[ApplicationsID] = Loan(true, ApplicationsID, msg.sender, 5, newAmount);
         //applications[appId].credit_amount, applications[appId].credit_amount, 0, now, 0, appId);
         delete applications[ApplicationsID];
@@ -136,10 +135,10 @@ contract P2PLending {
         hasOngoingLoan[ApplicationsID] = true;
         hasOngoingInvestment[msg.sender] = true;
     }
-  
-    function repayLoan(int amount) payable public {
+    
+    function repayLoan(uint amount) payable public {
         require(isBorrower(msg.sender), 'You are not an Borrower');
-        require(balances[msg.sender] >= uint(amount), 'Not enough money on your BankAccount');
+        require(balances[msg.sender] >= amount, 'Not enough money on your BankAccount');
         require(hasOngoingLoan[msg.sender] == true, 'You do not have an ongoing Loan');
         require(ifLoanOpen(msg.sender) == true, 'You have already paid your debt');
         
