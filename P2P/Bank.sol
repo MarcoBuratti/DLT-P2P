@@ -1,8 +1,9 @@
+//"SPDX-License-Identifier: UNLICENSED"
 pragma solidity ^0.5.0;
 
 contract P2PLending {
     // Global Variables
-    mapping (address => uint) balances;                     // conti correnti degli investitori 
+    //mapping (address => uint) balances;                     // conti correnti degli investitori 
 
     mapping (address => Investor) private investors;         // lista degli investitori 
     mapping (address => Borrower) private borrowers;         // lista dei richiedenti di finanziamento 
@@ -40,14 +41,14 @@ contract P2PLending {
 
         bool openLoan;
         address borrower;
-        address investor;
+        address payable investor;
         uint interest_rate;
         uint original_amount;
 
     }
     
     // Methods
-    constructor() public {
+    constructor() public{
         contractOwner = msg.sender;
     }
     
@@ -62,7 +63,7 @@ contract P2PLending {
         // inizialiazza ongoing inv a false perche non ha mai investito
         hasOngoingInvestment[msg.sender] = false;
         //inizialiazza la mappa balances a zero perche non ha mai versato una lira
-        balances[msg.sender] = 0;
+        //balances[msg.sender] = 0;
     }
     
     function createBorrower() public {
@@ -73,7 +74,7 @@ contract P2PLending {
         borrowers[msg.sender] = borrower;
         hasOngoingLoan[msg.sender] = false;
         hasOngoingApplication[msg.sender] = false;
-        balances[msg.sender] = 0; // Init balance
+        //balances[msg.sender] = 0; // Init balance
     }
     
     function createApplication(uint credit_amount, string memory description) public {
@@ -88,9 +89,9 @@ contract P2PLending {
     }
     
     //versamento sul conto corrente
-    function deposit() payable public {
+    /*function deposit() payable public {
         balances[msg.sender] += msg.value;
-    }
+    }*/
     
     //richiesta per il prelievo 
     /*function withdraw(int amount) public {
@@ -100,34 +101,36 @@ contract P2PLending {
         msg.sender.transfer(withdrawAmount);
     }*/
     
-    function withdrawAll() public {
+    /*function withdrawAll() public {
         require(balances[msg.sender] > 0, 'Nothing to withdraw');
         msg.sender.transfer(balances[msg.sender]);
+        //msg.sender.transfer(address(this).balance);
         balances[msg.sender] = 0;
-    }
+    }*/
     
     //finanzia un progetto/debitore
-    function transfer(address reciever, uint amount) private {
+    function transfer(address payable reciever, uint amount) private {
         require(borrowers[reciever].EXISTS == true || investors[reciever].EXISTS == true, 'This address do not exists!');
-        require(balances[msg.sender] >= amount * 1000000000000000000 );
-        balances[msg.sender] -= amount * 1000000000000000000;
-        balances[reciever] += amount * 1000000000000000000;
+        //require(balances[msg.sender] >= amount * 1000000000000000000 );
+        //balances[msg.sender] -= amount * 1000000000000000000;
+        //balances[reciever] += amount * 1000000000000000000;
+        reciever.send(amount);
     }
     
-    function grantLoan(address ApplicationsID, uint amount) payable public {
+    function grantLoan(address payable ApplicationsID) payable public {
         //Check sufficient balance
         require(isInvestor(msg.sender), 'You are not an Investor');
-        require(balances[msg.sender] >= applications[ApplicationsID].credit_amount, 'Not enough money on your BankAccount');
+        //require(balances[msg.sender] >= applications[ApplicationsID].credit_amount, 'Not enough money on your BankAccount');
         require(hasOngoingInvestment[msg.sender] == false, 'You already have an ongoing Investment');
         require(applications[ApplicationsID].openApplications == true, 'This application does not exist');
-        require(amount == applications[ApplicationsID].credit_amount, 'Give the same amount requested from Apllications');
+        //require(msg.value == applications[ApplicationsID].credit_amount*1000000000000000000, 'Give the same amount requested from Apllications');
 
         // Take from sender and give to reciever
-        transfer(ApplicationsID, amount);
+        transfer(ApplicationsID, msg.value);
         
         // Populate loan object
-        uint newAmount = applications[ApplicationsID].credit_amount * 1000000000000000000;
-        loans[ApplicationsID] = Loan(true, ApplicationsID, msg.sender, 5, newAmount);
+        //uint newAmount = applications[ApplicationsID].credit_amount * 1000000000000000000;
+        loans[ApplicationsID] = Loan(true, ApplicationsID, msg.sender, 5, msg.value);
         //applications[appId].credit_amount, applications[appId].credit_amount, 0, now, 0, appId);
         delete applications[ApplicationsID];
         
@@ -136,25 +139,28 @@ contract P2PLending {
         hasOngoingInvestment[msg.sender] = true;
     }
     
-    function repayLoan(uint amount) payable public {
+    function repayLoan() payable public{
         require(isBorrower(msg.sender), 'You are not an Borrower');
-        require(balances[msg.sender] >= amount, 'Not enough money on your BankAccount');
+        //require(balances[msg.sender] >= amount, 'Not enough money on your BankAccount');
         require(hasOngoingLoan[msg.sender] == true, 'You do not have an ongoing Loan');
         require(ifLoanOpen(msg.sender) == true, 'You have already paid your debt');
         
-        address reciever = loans[msg.sender].investor;
+        address payable reciever = (loans[msg.sender].investor);
         loans[msg.sender].original_amount -= msg.value;
-
-        transfer(reciever, amount);
+        //loans[msg.sender].openLoan = false;
+        
+        transfer(reciever, msg.value);
         hasOngoingInvestment[reciever] = false;
         hasOngoingLoan[msg.sender] = false;
         emit PayBack(msg.sender, reciever, msg.value, loans[msg.sender].original_amount);
-        delete loans[msg.sender];
+        //delete loans[msg.sender];
     }
     
-    function viewBalance() public view returns (int) {
-        return int(balances[msg.sender]);
-    }    
+    /*function viewBalance(address index) public view returns (uint) {
+        //require(msg.sender == balances[msg.sender], 'you aren\'t the BankAccount owner');
+        return balances[index];
+    }*/
+    
     function getListApplication() public view returns (address [] memory) {
         return tableProject;
     }
@@ -166,16 +172,16 @@ contract P2PLending {
         string storage description = applications[index].otherData;
         bool isTaken = applications[index].openApplications;
         return (borrower, amount, interest, description, isTaken);
-
     }
-    function getLoanData(address index) public view returns (bool, address, address, uint, uint) {
-        require(loans[index].openLoan == true, 'This loan do not exist');
-        require(msg.sender == index, 'You are not the debt owner');
-        bool isOpen = loans[index].openLoan;
-        address owner = loans[index].borrower;
-        address whoInvest = loans[index].investor;
-        uint interest = loans[index].interest_rate;
-        uint amount = loans[index].original_amount;
+    
+    function getLoanData() public view returns (bool, address, address, uint, uint) {
+        require(loans[msg.sender].openLoan == true, 'This loan do not exist');
+        require(msg.sender == loans[msg.sender].borrower, 'You are not the debt owner');
+        bool isOpen = loans[msg.sender].openLoan;
+        address owner = loans[msg.sender].borrower;
+        address whoInvest = loans[msg.sender].investor;
+        uint interest = loans[msg.sender].interest_rate;
+        uint amount = loans[msg.sender].original_amount;
         return (isOpen, owner, whoInvest, interest, amount);
     }
     
