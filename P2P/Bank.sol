@@ -18,8 +18,9 @@ contract P2PLending {
     mapping(address => bool) private hasOngoingApplication;         // lista di chi ha all'attivo richieste di finanziamento
     mapping(address => bool) private hasOngoingInvestment;          // lista di chi ha all'attivo investimenti 
 
-    event PayBack(address indexed from, address indexed to, uint value, uint amount);   //event usato per esporre a tutti chi paga e quando
-
+    event PayBack(address indexed borrower, address indexed investor, uint value, uint amount, uint time);   //event usato per esporre a tutti chi paga e quando
+    event debitEmit(address indexed sender, address indexed reciever, uint amount, uint time);
+    
     // Structs actors
     struct Investor {
         address investor_public_key;
@@ -34,7 +35,7 @@ contract P2PLending {
         bool openApplications;
         address borrower;
         uint credit_amount; // Loan amount
-        uint interest_rate; //From form
+        string interest_rate; //From form
         string otherData; // Encoded string with delimiters
     }
     struct Loan {
@@ -42,9 +43,8 @@ contract P2PLending {
         bool openLoan;
         address borrower;
         address payable investor;
-        uint interest_rate;
+        //uint interest_rate;
         uint original_amount;
-
     }
     
     // Methods
@@ -77,12 +77,26 @@ contract P2PLending {
         //balances[msg.sender] = 0; // Init balance
     }
     
+    function resetMyProfile() public{
+        require(hasOngoingLoan[msg.sender] == false, 'You have an ongoing Loan, repay the loan before reset your profile');
+        require(hasOngoingApplication[msg.sender] == false, 'You have an ongoing Application, close this application before reset your prfofile');
+        require(hasOngoingInvestment[msg.sender] == false, 'You already have an ongoing Investment, wait to be repaid');
+        delete investors[msg.sender];
+        delete borrowers[msg.sender];
+    }
+    
+    function deleteApllication() public{
+        require(hasOngoingApplication[msg.sender] == true, 'You don\'t have an ongoing Application');
+        hasOngoingApplication[msg.sender] = false;
+        delete applications[msg.sender];
+    }
+    
     function createApplication(uint credit_amount, string memory description) public {
         //richiedente non deve avere debiti ne richieste di debito attive
         require(hasOngoingLoan[msg.sender] == false, 'You have an ongoing Loan');
         require(hasOngoingApplication[msg.sender] == false, 'You have an ongoing Application');
         require(isBorrower(msg.sender), 'You aren\'t subscribe as a borrower');
-        applications[msg.sender] = LoanApplication(true, msg.sender, credit_amount, 5, description);
+        applications[msg.sender] = LoanApplication(true, msg.sender, credit_amount, '5% of interest', description);
 
         hasOngoingApplication[msg.sender] = true;
         tableProject.push(msg.sender);
@@ -129,9 +143,10 @@ contract P2PLending {
         transfer(ApplicationsID, msg.value);
         
         // Populate loan object
-        //uint newAmount = applications[ApplicationsID].credit_amount * 1000000000000000000;
-        loans[ApplicationsID] = Loan(true, ApplicationsID, msg.sender, 5, msg.value);
-        //applications[appId].credit_amount, applications[appId].credit_amount, 0, now, 0, appId);
+        uint newAmount = (msg.value * 5) / 100 ;
+        newAmount += msg.value;
+        loans[ApplicationsID] = Loan(true, ApplicationsID, msg.sender, newAmount);
+        emit debitEmit(msg.sender, ApplicationsID, msg.value, now);
         delete applications[ApplicationsID];
         
         hasOngoingApplication[ApplicationsID] = false;
@@ -143,16 +158,15 @@ contract P2PLending {
         require(isBorrower(msg.sender), 'You are not an Borrower');
         //require(balances[msg.sender] >= amount, 'Not enough money on your BankAccount');
         require(hasOngoingLoan[msg.sender] == true, 'You do not have an ongoing Loan');
-        require(ifLoanOpen(msg.sender) == true, 'You have already paid your debt');
+        //require(ifLoanOpen(msg.sender, reciever) == true, 'You have already paid your debt');
         
         address payable reciever = (loans[msg.sender].investor);
         loans[msg.sender].original_amount -= msg.value;
         //loans[msg.sender].openLoan = false;
         
         transfer(reciever, msg.value);
-        hasOngoingInvestment[reciever] = false;
-        hasOngoingLoan[msg.sender] = false;
-        emit PayBack(msg.sender, reciever, msg.value, loans[msg.sender].original_amount);
+        emit PayBack(msg.sender, reciever, msg.value, loans[msg.sender].original_amount, now);
+        ifLoanOpen(msg.sender, reciever);
         //delete loans[msg.sender];
     }
     
@@ -164,29 +178,35 @@ contract P2PLending {
     function getListApplication() public view returns (address [] memory) {
         return tableProject;
     }
-    function getApplicationData(address index) public view returns (address, uint, uint, string memory, bool) {
+    function getApplicationData(address index) public view returns (address, uint, string memory, bool) {
         
         address borrower = applications[index].borrower;
         uint amount = applications[index].credit_amount;
-        uint interest = applications[index].interest_rate;
+        //uint interest = applications[index].interest_rate;
         string storage description = applications[index].otherData;
         bool isTaken = applications[index].openApplications;
-        return (borrower, amount, interest, description, isTaken);
+        return (borrower, amount, description, isTaken);
     }
     
-    function getLoanData() public view returns (bool, address, address, uint, uint) {
-        require(loans[msg.sender].openLoan == true, 'This loan do not exist');
-        require(msg.sender == loans[msg.sender].borrower, 'You are not the debt owner');
-        bool isOpen = loans[msg.sender].openLoan;
-        address owner = loans[msg.sender].borrower;
-        address whoInvest = loans[msg.sender].investor;
-        uint interest = loans[msg.sender].interest_rate;
-        uint amount = loans[msg.sender].original_amount;
-        return (isOpen, owner, whoInvest, interest, amount);
+    function getLoanData(address index) public view returns (bool, address, address, uint) {
+        bool isOpen = loans[index].openLoan;
+        address owner = loans[index].borrower;
+        address whoInvest = loans[index].investor;
+        //uint interest = loans[index].interest_rate;
+        uint amount = loans[index].original_amount;
+        return (isOpen, owner, whoInvest, amount);
     }
     
-    function ifLoanOpen(address index) private view returns (bool) {
-        if (loans[index].original_amount > 0) return true; else return false;
+    function ifLoanOpen(address index, address reciever) private returns (bool) {
+        if (loans[index].original_amount > 0) 
+            return true; 
+        else if(loans[index].original_amount == 0){
+            loans[index].openLoan = false;
+            delete loans[index];
+            hasOngoingInvestment[reciever] = false;
+            hasOngoingLoan[msg.sender] = false;
+        }
+        else return false;
     }
     function isInvestor(address account) private view returns (bool) {return investors[account].EXISTS;}
     function isBorrower(address account) private view returns (bool) {return borrowers[account].EXISTS;}
